@@ -1,9 +1,5 @@
 #include <Arduino.h>
-
-/*
- * Test all gamepad buttons, axes and dpad 
-*/
-
+#include "esp_bt.h"
 #include <BleGamepad.h> 
 
 #define numOfButtons 64
@@ -14,8 +10,10 @@ BleGamepad *bleGamepad = nullptr;
 
 const byte no_buttons = 13;
 byte buttons[no_buttons] = {13, 15, 14, 27, 26, 33, 32, 16, 17, 18, 19, 21, 22};
-byte led = 23;
-byte whammy = 36;
+const byte led = 23;
+const byte whammy = 36;
+
+const byte pot_samples = 5;
 
 byte previousButtonStates[numOfButtons];
 byte currentButtonStates[numOfButtons];
@@ -36,24 +34,32 @@ void setup()
   //Serial.println("Starting BLE work!");
   bleGamepad->setAutoReport(false);
   bleGamepad->setControllerType(CONTROLLER_TYPE_GAMEPAD);  //CONTROLLER_TYPE_JOYSTICK, CONTROLLER_TYPE_GAMEPAD (DEFAULT), CONTROLLER_TYPE_MULTI_AXIS
-  bleGamepad->begin(numOfButtons,numOfHatSwitches);        //Simulation controls are disabled by default
+  bleGamepad->begin(numOfButtons,numOfHatSwitches);        //Simulation controls are disabled by 
+
+  //inrease transmit power
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9); 
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+  //esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN ,ESP_PWR_LVL_P9);
 
   //digitalWrite(led, HIGH);
 
 }
 
 void whammy_input(){
-  int whammy_value = analogRead(whammy);
-  int adjusted_value = map(whammy_value, 1920, 0, 32737, -32737);
-  bleGamepad->setX(adjusted_value);
+  int sum_whammy_val = 0;
+  for(byte i = 0; i < pot_samples; i++){
+    sum_whammy_val = analogRead(whammy);
+    delay(4);
+  }
+  bleGamepad->setX(map(sum_whammy_val / pot_samples, 1920, 0, 32737, -32737));
 }
 
 void loop(){
   //handle_button_inputs();
   //whammy_input();
-
   if(bleGamepad != nullptr && bleGamepad->isConnected()) 
-  {    
+  { 
+    whammy_input(); // = delay 20 (5 samples 4ms delay between them)
 
     for(byte i = 0; i < no_buttons; i++){
       //itearate through every input buttons
@@ -78,8 +84,4 @@ void loop(){
     }
 
   }
-
-  whammy_input();
-
-  delay(20);
 }
