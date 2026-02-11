@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "src/BleConnectionStatus.cpp"
+        "src/BleHostConfiguration.cpp"
+        "src/BleXInputDeviceManager.cpp"
+        "src/XboxGamepadConfigurations.cpp"
+        "src/XboxGamepadDevice.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        bt
+        esp-nimble-cpp
+)

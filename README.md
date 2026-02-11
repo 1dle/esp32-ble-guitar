@@ -1,4 +1,13 @@
-# ESP32 BLE guitar
+# feature-idf
+> [!NOTE]
+> WIP: migrating PlatformIO to ESP-IDF based project
+
+### TODO:
+- [ ] Add Guitar hero HID descriptor (except not if breaking XInput BLE implementation)
+- [ ] map buttons on controller to work by plug-and-play so Guitar Hero 3 (PC) will recognise it
+
+
+## ESP32 BLE guitar
 
 Transform toy guitar into a Clone Hero controller with ESP32
 
