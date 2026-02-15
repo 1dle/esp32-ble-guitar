@@ -20,7 +20,7 @@ void BleConnectionStatus::onConnect(NimBLEServer* pServer, NimBLEConnInfo& connI
     _activeConnHandle = connInfo.getConnHandle();
     _advState = AdvState::Connected;
     _connEstablishedMs = esp_timer_get_time() / 1000;
-    // _paramUpdatePending = true;
+    _paramUpdatePending = true;
     connected = true;
     _advertisingActive = false;
 }
@@ -49,13 +49,17 @@ void BleConnectionStatus::update()
     switch (_advState)
     {
         case AdvState::Connected:
-            // if (_paramUpdatePending && now - _connEstablishedMs >= PARAM_UPDATE_DELAY_MS) {
-            //     NimBLEDevice::getServer()->updateConnParams(
-            //         _activeConnHandle, 15, 30, 0, 400
-            //     );
-            //     _paramUpdatePending = false;
-            //     ESP_LOGI(LOG_TAG, "Connection parameters updated");
-            // }
+            if (_paramUpdatePending && now - _connEstablishedMs >= PARAM_UPDATE_DELAY_MS) {
+               NimBLEDevice::getServer()->updateConnParams(
+                    _activeConnHandle, 
+                    6, //min interval (7.5ms)
+                    12, //max interval (15ms)
+                    0, 
+                    400
+                );
+                _paramUpdatePending = false;
+                ESP_LOGI(LOG_TAG, "Connection parameters updated");
+            }
             break;
 
         case AdvState::ReconnectWindow:

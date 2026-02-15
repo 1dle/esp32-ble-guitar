@@ -22,7 +22,7 @@ private:
     AdvState _advState = AdvState::Advertising;
     uint16_t _activeConnHandle = BLE_HS_CONN_HANDLE_NONE;
     bool connected = false;
-    bool _paramUpdatePending = false;
+    bool _paramUpdatePending = true;
     bool _advertisingActive = false;
 
     uint32_t _lastAdvStopMs = 0;
