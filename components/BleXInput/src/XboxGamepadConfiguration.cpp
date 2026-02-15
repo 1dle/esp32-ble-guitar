@@ -5,7 +5,6 @@
 
 XboxSeriesXControllerDeviceConfiguration::XboxSeriesXControllerDeviceConfiguration(uint8_t reportId) {
     _reportId = reportId;
-    _autoReport = true;
     _autoDefer = false;
 }
 

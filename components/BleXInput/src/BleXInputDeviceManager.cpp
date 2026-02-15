@@ -2,8 +2,8 @@
 
 static const char *LOG_TAG = "BleXInputDeviceManager";
 
-BleXInputDeviceManager::BleXInputDeviceManager(const char* name, const char* manufacturer, uint16_t idleInterval) :
-    _name(name), _manufacturer(manufacturer), _idleInterval(idleInterval)
+BleXInputDeviceManager::BleXInputDeviceManager(const char* name, const char* manufacturer, uint16_t idleInterval)
+    : _name(name), _manufacturer(manufacturer), _idleInterval(idleInterval)
 {
 }
 
@@ -23,58 +23,48 @@ void BleXInputDeviceManager::setDevice(XboxGamepadDevice* device)
 void BleXInputDeviceManager::begin(BleHostConfiguration hostConfig)
 {
     NimBLEDevice::init(_name);
+    NimBLEDevice::setSecurityAuth(true, true, true);  // bonding + MITM + SC
+    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
+
+
     auto server = NimBLEDevice::createServer();
     server->setCallbacks(&_connStatus);
 
     _hid = new NimBLEHIDDevice(server);
     _hid->setManufacturer(std::string(_manufacturer));
-
-    // Basic HID info - CRITICAL: Use correct parameters
     _hid->setPnp(0x02, hostConfig.getVid(), hostConfig.getPid(), hostConfig.getGuidVersion());
-    _hid->setHidInfo(0x00, 0x01);  // Correct parameters for HID info
+    _hid->setHidInfo(0x00, 0x01);
 
     if (_device) {
         _device->init(_hid);
-    }
-
-    // Set report map from device configuration if available
-    auto cfg = _device ? _device->getDeviceConfig() : nullptr;
-    if (cfg) {
-        // Allocate a buffer for the HID descriptor
-        const size_t bufSize = 1024;
-        uint8_t* reportMap = (uint8_t*)malloc(bufSize);
-        if (reportMap) {
-            size_t mapSize = cfg->makeDeviceReport(reportMap, bufSize);
+        auto cfg = _device->getDeviceConfig();
+        if (cfg) {
+            uint8_t reportMap[1024];
+            size_t mapSize = cfg->makeDeviceReport(reportMap, sizeof(reportMap));
             if (mapSize > 0) {
                 _hid->setReportMap(reportMap, (uint16_t)mapSize);
             }
-            free(reportMap);
         }
     }
 
-    NimBLEDevice::setSecurityAuth(true, false, false);  // enable bonding, no MITM, no SC
-
     _hid->startServices();
-    // Set initial battery level AFTER services start
     _hid->setBatteryLevel(100, false);
 
-    // Configure and start BLE advertisement with proper settings
-    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    
-    // Set device name in advertising - needed for proper device identification
-    pAdvertising->setName(_name);
-    
-    pAdvertising->setAppearance(HID_GAMEPAD);
-    pAdvertising->addServiceUUID(_hid->getHidService()->getUUID());
-    pAdvertising->addServiceUUID(_hid->getBatteryService()->getUUID());
-    
-    pAdvertising->start();
+    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+    adv->setName(_name);
+    adv->setAppearance(HID_GAMEPAD);
+    adv->addServiceUUID(_hid->getHidService()->getUUID());
+    adv->addServiceUUID(_hid->getBatteryService()->getUUID());
 
-    ESP_LOGI(LOG_TAG, "BLE HID started");
-    ESP_LOGI(LOG_TAG, "Device: %s (HID Gamepad with security enabled)", _name);
+    ESP_LOGI(LOG_TAG, "BLE HID started: %s", _name);
 }
 
-bool BleXInputDeviceManager::isConnected()
+bool BleXInputDeviceManager::isConnected() const
 {
     return _connStatus.isConnected();
+}
+
+void BleXInputDeviceManager::update()
+{
+    _connStatus.update();
 }

@@ -192,7 +192,6 @@ public:
     void sendGamepadReport(bool defer = false);
 
 private:
-    void sendGamepadReportImpl();
     XboxGamepadInputReportData _inputReport;
 
     NimBLECharacteristic* _input;

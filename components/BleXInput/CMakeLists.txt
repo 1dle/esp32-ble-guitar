@@ -3,7 +3,7 @@ idf_component_register(
         "src/BleConnectionStatus.cpp"
         "src/BleHostConfiguration.cpp"
         "src/BleXInputDeviceManager.cpp"
-        "src/XboxGamepadConfigurations.cpp"
+        "src/XboxGamepadConfiguration.cpp"
         "src/XboxGamepadDevice.cpp"
     INCLUDE_DIRS
         "include"

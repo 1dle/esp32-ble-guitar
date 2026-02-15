@@ -1,179 +1,82 @@
-#include <math.h>
 #include <stdio.h>
-#include <string.h>
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "esp_log.h"
-#include "nvs_flash.h"
-#include "driver/gpio.h"
 
-#include "BleConnectionStatus.h"
-#include "BleXinputDeviceManager.h"
 #include "XboxGamepadDevice.h"
+#include "XboxGamepadConfiguration.h"
+#include "GuitarHeroAdapter.h"
+#include "ConfigManager.h"
+#include "InputManager.h"
+#include "BleXInputDeviceManager.h"
 
+static const char* TAG = "Main";
 
-static const char *TAG = "ESP32-HID";
+// ---- Make these static so the task can access them ----
+static ConfigManager config;
+static XboxSeriesXControllerDeviceConfiguration* xconfig;
+static XboxGamepadDevice* xbox;
+static GuitarHeroAdapter* adapter;
+static InputManager* input;
+static BleXInputDeviceManager* bleManager;
 
-static const gpio_num_t LED_PIN = GPIO_NUM_5;
+static int advertisingUpdateCounter = 0;
 
-XboxGamepadDevice *gamepad;
-BleXInputDeviceManager bleDeviceManager("ESP32 SeriesX Controller", "Mystfit", 100);
-
-static void OnVibrateEvent(XboxGamepadOutputReportData data)
+static void inputTask(void* pvParameters)
 {
-    if (data.weakMotorMagnitude > 0 || data.strongMotorMagnitude > 0) {
-        gpio_set_level(LED_PIN, 0);
-    } else {
-        gpio_set_level(LED_PIN, 1);
+    TickType_t lastWakeTime = xTaskGetTickCount();
+    const TickType_t delayTicks = pdMS_TO_TICKS(config.getInputTaskDelayMs());
+
+    ESP_LOGI(TAG, "Input task started on CPU %d at %ldms polling rate", 
+             xPortGetCoreID(), config.getInputTaskDelayMs());
+
+    while (true)
+{
+    input->update();
+
+    if (adapter->stateChanged())
+    {
+        xbox->sendGamepadReport();
+        adapter->clearDirty();
     }
 
-    ESP_LOGI(TAG, "Vibration event. Weak motor: %d Strong motor: %d",
-             data.weakMotorMagnitude, data.strongMotorMagnitude);
+    // Update BLE connection state / advertising safely
+    bleManager->update();
+
+    vTaskDelayUntil(&lastWakeTime, delayTicks);
 }
 
-static void testButtons()
-{
-    uint16_t buttons[] = {
-        XBOX_BUTTON_A,
-        XBOX_BUTTON_B,
-        XBOX_BUTTON_X,
-        XBOX_BUTTON_Y,
-        XBOX_BUTTON_LB,
-        XBOX_BUTTON_RB,
-        XBOX_BUTTON_START,
-        XBOX_BUTTON_SELECT,
-        XBOX_BUTTON_LS,
-        XBOX_BUTTON_RS
-    };
-
-    for (uint16_t button : buttons)
-    {
-        ESP_LOGI(TAG, "Pressing button %d", button);
-        gamepad->press(button);
-        gamepad->sendGamepadReport();
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-        gamepad->release(button);
-        gamepad->sendGamepadReport();
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    gamepad->pressShare();
-    gamepad->sendGamepadReport();
-    vTaskDelay(pdMS_TO_TICKS(500));
-    gamepad->releaseShare();
-    gamepad->sendGamepadReport();
-    vTaskDelay(pdMS_TO_TICKS(100));
-}
-
-static void testPads()
-{
-    XboxDpadFlags directions[] = {
-        XboxDpadFlags::NORTH,
-        XboxDpadFlags((uint8_t)XboxDpadFlags::NORTH | (uint8_t)XboxDpadFlags::EAST),
-        XboxDpadFlags::EAST,
-        XboxDpadFlags((uint8_t)XboxDpadFlags::EAST | (uint8_t)XboxDpadFlags::SOUTH),
-        XboxDpadFlags::SOUTH,
-        XboxDpadFlags((uint8_t)XboxDpadFlags::SOUTH | (uint8_t)XboxDpadFlags::WEST),
-        XboxDpadFlags::WEST,
-        XboxDpadFlags((uint8_t)XboxDpadFlags::WEST | (uint8_t)XboxDpadFlags::NORTH)
-    };
-
-    for (XboxDpadFlags direction : directions)
-    {
-        ESP_LOGI(TAG, "Pressing DPad: %d", (int)direction);
-        gamepad->pressDPadDirectionFlag(direction);
-        gamepad->sendGamepadReport();
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-        gamepad->releaseDPad();
-        gamepad->sendGamepadReport();
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-static void testTriggers()
-{
-    for (int16_t val = XBOX_TRIGGER_MIN; val <= XBOX_TRIGGER_MAX; val++)
-    {
-        if (val % 8 == 0)
-            ESP_LOGI(TAG, "Setting trigger value to %d", val);
-
-        gamepad->setLeftTrigger(val);
-        gamepad->setRightTrigger(val);
-        gamepad->sendGamepadReport();
-        vTaskDelay(pdMS_TO_TICKS(8));
-    }
-}
-
-static void testThumbsticks()
-{
-    int startTime = (int)esp_timer_get_time() / 1000;
-    int reportCount = 0;
-
-    while ((esp_timer_get_time() / 1000) - startTime < 8000)
-    {
-        reportCount++;
-        int16_t x = cos((float)esp_timer_get_time() / 1000000.0f) * XBOX_STICK_MAX;
-        int16_t y = sin((float)esp_timer_get_time() / 1000000.0f) * XBOX_STICK_MAX;
-
-        gamepad->setLeftThumb(x, y);
-        gamepad->setRightThumb(x, y);
-        gamepad->sendGamepadReport();
-
-        if (reportCount % 8 == 0)
-            ESP_LOGI(TAG, "Setting left thumb to %d, %d", x, y);
-
-        vTaskDelay(pdMS_TO_TICKS(8));
-    }
 }
 
 extern "C" void app_main(void)
 {
-    ESP_LOGI(TAG, "Initializing NVS");
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "Starting Guitar Hero BLE Gamepad");
 
-    //gpio_pad_select_gpio(LED_PIN);
-    //gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
+    xconfig = new XboxSeriesXControllerDeviceConfiguration();
+    xbox = new XboxGamepadDevice(xconfig);
+    adapter = new GuitarHeroAdapter(*xbox);
+    input = new InputManager(*adapter, config);
 
-    XboxSeriesXControllerDeviceConfiguration *config = new XboxSeriesXControllerDeviceConfiguration();
+    input->init();
 
-    BleHostConfiguration hostConfig = config->getIdealHostConfiguration();
+    bleManager = new BleXInputDeviceManager ("GH_BLE_Gamepad", "ESP32", 100);
+    bleManager->setDevice(xbox);
 
-    ESP_LOGI(TAG, "Using VID source: 0x%04x", hostConfig.getVidSource());
-    ESP_LOGI(TAG, "Using VID: 0x%04x", hostConfig.getVid());
-    ESP_LOGI(TAG, "Using PID: 0x%04x", hostConfig.getPid());
-    ESP_LOGI(TAG, "Using GUID version: 0x%02x", hostConfig.getGuidVersion());
-    //ESP_LOGI(TAG, "Using serial number: %s", hostConfig.getSerialNumber().c_str());
+    BleHostConfiguration hostConfig = xconfig->getIdealHostConfiguration();
+    bleManager->begin(hostConfig);
 
-    gamepad = new XboxGamepadDevice(config);
+    ESP_LOGI(TAG, "Initialization complete");
 
-    //FunctionSlot<XboxGamepadOutputReportData> vibrationSlot(OnVibrateEvent);
-    //gamepad->onVibrate.attach(vibrationSlot);
+    // Create input task pinned to CPU 1 (NOT CPU 0)
+    xTaskCreatePinnedToCore(
+        inputTask,
+        "input_task",
+        4096,
+        nullptr,
+        1,
+        nullptr,
+        1
+    );
 
-    bleDeviceManager.setDevice(gamepad);
-
-    ESP_LOGI(TAG, "Starting composite HID device...");
-    bleDeviceManager.begin(hostConfig);
-
-    while (true)
-    {
-        if (bleDeviceManager.isConnected())
-        {
-            //testButtons();
-            //testPads();
-            //testTriggers();
-            //testThumbsticks();
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    // app_main should now return or just idle
 }

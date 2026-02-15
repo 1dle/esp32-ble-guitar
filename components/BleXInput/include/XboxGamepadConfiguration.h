@@ -8,9 +8,6 @@ public:
     XboxSeriesXControllerDeviceConfiguration(uint8_t reportId = XBOX_INPUT_REPORT_ID);
     virtual ~XboxSeriesXControllerDeviceConfiguration() = default;
 
-    bool getAutoReport() const { return _autoReport; }
-    void setAutoReport(bool v) { _autoReport = v; }
-
     void setAutoDefer(bool v) { _autoDefer = v; }
     bool getAutoDefer() const { return _autoDefer; }
 
@@ -23,7 +20,6 @@ public:
     virtual size_t makeDeviceReport(uint8_t* buffer, size_t bufferSize) const;
 
 private:
-    bool _autoReport;
     bool _autoDefer;
     uint8_t _reportId;
 };

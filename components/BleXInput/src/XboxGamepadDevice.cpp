@@ -1,13 +1,6 @@
 #include "XboxGamepadDevice.h"
-
-
-#if defined(CONFIG_ARDUHAL_ESP_LOG)
-#include "esp32-hal-log.h"
-#define LOG_TAG "XboxGamepadDevice"
-#else
 #include "esp_log.h"
 static const char *LOG_TAG = "XboxGamepadDevice";
-#endif
 
 template<typename T, typename U, typename V>
 static inline T constrain(T v, U lo, V hi) {
@@ -117,36 +110,20 @@ void XboxGamepadDevice::resetInputs() {
 }
 
 void XboxGamepadDevice::press(uint16_t button) {
+    std::lock_guard<std::mutex> lock(_mutex);
     // Avoid double presses
-    if (!isPressed(button))
-    {
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.buttons |= button;
-            ESP_LOGD(LOG_TAG, "XboxGamepadDevice::press, button: %d", button);
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
+    if ((_inputReport.buttons & button) != button) {
+        _inputReport.buttons |= button;
+        ESP_LOGD(LOG_TAG, "XboxGamepadDevice::press, button: %d", button);
     }
 }
 
 void XboxGamepadDevice::release(uint16_t button) {
+    std::lock_guard<std::mutex> lock(_mutex);
     // Avoid double presses
-    if (isPressed(button))
-    {   
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.buttons ^= button;
-            ESP_LOGD(LOG_TAG, "XboxGamepadDevice::release, button: %d", button);
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
+    if ((_inputReport.buttons & button) == button) {
+        _inputReport.buttons ^= button;
+        ESP_LOGD(LOG_TAG, "XboxGamepadDevice::release, button: %d", button);
     }
 }
 
@@ -159,99 +136,49 @@ void XboxGamepadDevice::setLeftThumb(int16_t x, int16_t y) {
     x = constrain(x, XBOX_STICK_MIN, XBOX_STICK_MAX);
     y = constrain(y, XBOX_STICK_MIN, XBOX_STICK_MAX);
 
-    if(_inputReport.x != x || _inputReport.y != y){
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.x = (uint16_t)(x + XBOX_AXIS_CENTER_OFFSET);
-            _inputReport.y = (uint16_t)(y + XBOX_AXIS_CENTER_OFFSET);
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
-    }
+    std::lock_guard<std::mutex> lock(_mutex);
+    _inputReport.x = (uint16_t)(x + XBOX_AXIS_CENTER_OFFSET);
+    _inputReport.y = (uint16_t)(y + XBOX_AXIS_CENTER_OFFSET);
 }
 
 void XboxGamepadDevice::setRightThumb(int16_t z, int16_t rZ) {
     z = constrain(z, XBOX_STICK_MIN, XBOX_STICK_MAX);
     rZ = constrain(rZ, XBOX_STICK_MIN, XBOX_STICK_MAX);
 
-    if(_inputReport.z != z || _inputReport.rz != rZ){
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.z = (uint16_t)(z + XBOX_AXIS_CENTER_OFFSET);
-            _inputReport.rz = (uint16_t)(rZ+ XBOX_AXIS_CENTER_OFFSET);
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
-    }
+    std::lock_guard<std::mutex> lock(_mutex);
+    _inputReport.z = (uint16_t)(z + XBOX_AXIS_CENTER_OFFSET);
+    _inputReport.rz = (uint16_t)(rZ + XBOX_AXIS_CENTER_OFFSET);
 }
 
 void XboxGamepadDevice::setLeftTrigger(uint16_t value) {
     value = constrain(value, XBOX_TRIGGER_MIN, XBOX_TRIGGER_MAX);
 
-    if (_inputReport.brake != value) {
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.brake = value;
-        }
-
-        if (_config->getAutoReport()) {
-            sendGamepadReport();
-        }
-    }
+    std::lock_guard<std::mutex> lock(_mutex);
+    _inputReport.brake = value;
 }
 
 void XboxGamepadDevice::setRightTrigger(uint16_t value) {
     value = constrain(value, XBOX_TRIGGER_MIN, XBOX_TRIGGER_MAX);
 
-    if (_inputReport.accelerator != value) {
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.accelerator = value;
-        }
-
-        if (_config->getAutoReport()) {
-            sendGamepadReport();
-        }
-    }
+    std::lock_guard<std::mutex> lock(_mutex);
+    _inputReport.accelerator = value;
 }
 
 void XboxGamepadDevice::setTriggers(uint16_t left, uint16_t right) {
     left = constrain(left, XBOX_TRIGGER_MIN, XBOX_TRIGGER_MAX);
     right = constrain(right, XBOX_TRIGGER_MIN, XBOX_TRIGGER_MAX);
 
-    if (_inputReport.brake != left || _inputReport.accelerator != right) {
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.brake = left;
-            _inputReport.accelerator = right;
-        }
-        if (_config->getAutoReport()) {
-            sendGamepadReport();
-        }
-    }
+    std::lock_guard<std::mutex> lock(_mutex);
+    _inputReport.brake = left;
+    _inputReport.accelerator = right;
 }
 
 void XboxGamepadDevice::pressDPadDirection(uint8_t direction) {
-
+    std::lock_guard<std::mutex> lock(_mutex);
     // Avoid double presses
-    if (!isDPadPressed(direction))
-    {
+    if (_inputReport.hat != direction) {
         ESP_LOGD(LOG_TAG, "Pressing dpad direction %s", dPadDirectionName(direction));
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.hat = direction;
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
+        _inputReport.hat = direction;
     }
 }
 
@@ -306,42 +233,21 @@ bool XboxGamepadDevice::isDPadPressedFlag(XboxDpadFlags direction) {
 
 
 void XboxGamepadDevice::pressShare() {
+    std::lock_guard<std::mutex> lock(_mutex);
     // Avoid double presses
-    if (!(_inputReport.share & XBOX_BUTTON_SHARE))
-    {
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.share |= XBOX_BUTTON_SHARE;
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
+    if (!(_inputReport.share & XBOX_BUTTON_SHARE)) {
+        _inputReport.share |= XBOX_BUTTON_SHARE;
     }
 }
 
 void XboxGamepadDevice::releaseShare() {
-    if (_inputReport.share & XBOX_BUTTON_SHARE)
-    {
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _inputReport.share ^= XBOX_BUTTON_SHARE;
-        }
-
-        if (_config->getAutoReport())
-        {
-            sendGamepadReport();
-        }
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_inputReport.share & XBOX_BUTTON_SHARE) {
+        _inputReport.share ^= XBOX_BUTTON_SHARE;
     }
 }
 
 void XboxGamepadDevice::sendGamepadReport(bool defer) {
-    // Deferred reporting removed; always send immediately
-    sendGamepadReportImpl();
-}
-
-void XboxGamepadDevice::sendGamepadReportImpl(){
     if (!_input)
         return;
 

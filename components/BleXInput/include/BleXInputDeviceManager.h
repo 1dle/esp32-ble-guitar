@@ -15,13 +15,14 @@ public:
 
     void setDevice(XboxGamepadDevice* device);
     void begin(BleHostConfiguration hostConfig);
-    bool isConnected();
+    bool isConnected() const;
+    void update();
+    BleConnectionStatus _connStatus;
 
 private:
-    NimBLEHIDDevice* _hid = nullptr;
-    BleConnectionStatus _connStatus;
-    XboxGamepadDevice* _device = nullptr;
     const char* _name;
     const char* _manufacturer;
+    NimBLEHIDDevice* _hid = nullptr;
+    XboxGamepadDevice* _device = nullptr;
     uint16_t _idleInterval;
 };
