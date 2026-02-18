@@ -1,15 +1,29 @@
 #include <Arduino.h>
 #include "esp_bt.h"
-#include <BleGamepad.h> 
+#include <BleXInputDeviceManager.h>
+#include <XboxGamepadDevice.h>
+#include <GuitarHeroAdapter.h>
+#include <ConfigManager.h>
 
-#define numOfButtons 64
-#define numOfHatSwitches 0
+#define numOfButtons 13
 
-BleGamepad bleGamepad;
+XboxGamepadDevice xboxGamepad;
+BleXInputDeviceManager bleDeviceManager("GH BLE Xinput guitar", "delelele");
+GuitarHeroAdapter guitarAdapter(xboxGamepad);
 
 
 const byte no_buttons = 13;
 byte buttons[no_buttons] = {4, 15, 14, 27, 26, 33, 32, 16, 17, 18, 19, 21, 22};
+const ButtonMapping buttonMappings[] = {
+  {0, GHInput::FRET_0},
+  {1, GHInput::FRET_1},
+  {2, GHInput::FRET_2},
+  {3, GHInput::FRET_3},
+  {4, GHInput::FRET_4},
+  {5, GHInput::STRUM_UP},
+  {6, GHInput::STRUM_DOWN}
+};
+
 const byte led = 23;
 const byte whammy = 36;
 
@@ -33,16 +47,9 @@ void setup()
   }
   pinMode(led, OUTPUT);
 
-  //bleGamepad = new BleGamepad("deli's guitar", "DELI");
-
-  
-  //Serial.println("Starting BLE work!");
-  BleGamepadConfiguration bleGamepadConfig;
-  bleGamepadConfig.setAutoReport(false);
-  bleGamepadConfig.setControllerType(CONTROLLER_TYPE_GAMEPAD);  //CONTROLLER_TYPE_JOYSTICK, CONTROLLER_TYPE_GAMEPAD (DEFAULT), CONTROLLER_TYPE_MULTI_AXIS
-  bleGamepadConfig.setButtonCount(numOfButtons);
-  bleGamepadConfig.setHatSwitchCount(numOfHatSwitches);
-  bleGamepad.begin(&bleGamepadConfig);       //Simulation controls are disabled by 
+  BleHostConfiguration hostConfig = xboxGamepad.getDeviceConfig()->getIdealHostConfiguration();
+  bleDeviceManager.setDevice(&xboxGamepad);
+  bleDeviceManager.begin(hostConfig);
 
   //inrease transmit power
   //esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9); 
@@ -71,14 +78,15 @@ bool whammy_input(){
   whammyAccumulated = 0;
   whammySampleCount = 0;
 
-  bleGamepad.setX(map(averageWhammy, 1920, 0, 32737, -32737));
-  return true;
+  uint16_t whammyValue = (uint16_t)constrain(map(averageWhammy, 1920, 0, 0, 1023), 0, 1023);
+  guitarAdapter.setWhammy(whammyValue);
+  return guitarAdapter.stateChanged();
 }
 
 void loop(){
   //handle_button_inputs();
   //whammy_input();
-  if(bleGamepad.isConnected()) 
+  if(bleDeviceManager.isConnected()) 
   { 
     bool reportRequired = whammy_input();
 
@@ -88,19 +96,23 @@ void loop(){
     
       if (currentButtonStates[i] != previousButtonStates[i])
       {
-        if(currentButtonStates[i] == LOW)
-          bleGamepad.press(i+1);
-        else
-          bleGamepad.release(i+1);
+        bool pressed = currentButtonStates[i] == LOW;
+        for (const auto& mapping : buttonMappings) {
+          if (mapping.buttonIndex == i) {
+            guitarAdapter.setInput(mapping.input, pressed);
+            break;
+          }
+        }
 
         previousButtonStates[i] = currentButtonStates[i];
-        reportRequired = true;
+        reportRequired = reportRequired || guitarAdapter.stateChanged();
       } 
     }
 
-    if (reportRequired)
+    if (reportRequired && guitarAdapter.stateChanged())
     {
-      bleGamepad.sendReport();
+      guitarAdapter.clearDirty();
+      bleDeviceManager.enqueueReport();
     }
 
   }
